@@ -18,7 +18,7 @@ interface GroqResponse {
 const PeeKaboo: React.FC = () => {
   const [query, setQuery] = useState<string>('');
   const [results, setResults] = useState<ImageResult[]>([]);
-  const [summary, setSummary] = useState<string>('');
+  const [summary, setSummary] = useState<string>('Processing query...');
   const [metadata, setMetadata] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +27,11 @@ const PeeKaboo: React.FC = () => {
     "What is today's breaking news?",
     "Trends in computer science technology",
     "Software Testing Methods",
-    "Why is interstellar the best movie?"
+    "Why is Interstellar the best movie?",
   ];
 
   useEffect(() => {
-    const loadFont = async () => {
-      await document.fonts.load('12px "VT323"');
-    };
-    loadFont();
+    document.fonts.load('12px "VT323"').catch(() => {});
   }, []);
 
   const typeWriterEffect = (content: string, element: HTMLElement, speed: number = 5) => {
@@ -47,13 +44,9 @@ const PeeKaboo: React.FC = () => {
     const typeChar = () => {
       if (sentenceIndex < sentences.length) {
         const currentSentence = sentences[sentenceIndex];
-        
-        if (charIndex === 0) {
-          const p = document.createElement('p');
-          element.appendChild(p);
-        }
+        const p = element.lastElementChild as HTMLParagraphElement || document.createElement('p');
+        if (!element.contains(p)) element.appendChild(p);
 
-        const p = element.lastElementChild as HTMLParagraphElement;
         p.innerHTML += currentSentence[charIndex];
         charIndex++;
 
@@ -66,30 +59,26 @@ const PeeKaboo: React.FC = () => {
         }
       }
     };
-
     typeChar();
   };
 
   const searchWithGoogle = async (query: string, numSources: number = 15): Promise<SearchResult[]> => {
     const url = `https://www.googleapis.com/customsearch/v1?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&cx=${process.env.NEXT_PUBLIC_GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numSources}`;
-
     const response = await fetch(url);
+
     if (!response.ok) throw new Error(`Google search failed: ${response.statusText}`);
-    
     const data = await response.json();
-    return data.items?.map((item: any) => ({
-      url: item.link,
-      snippet: item.snippet || '',
-    })) || [];
+
+    return data.items?.map((item: any) => ({ url: item.link, snippet: item.snippet || '' })) || [];
   };
 
   const searchImagesWithGoogle = async (query: string, numImages: number = 4): Promise<ImageResult[]> => {
     const url = `https://www.googleapis.com/customsearch/v1?key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY}&cx=${process.env.NEXT_PUBLIC_GOOGLE_SEARCH_ENGINE_ID}&q=${encodeURIComponent(query)}&num=${numImages}&searchType=image`;
-
     const response = await fetch(url);
+
     if (!response.ok) throw new Error(`Google image search failed: ${response.statusText}`);
-    
     const data = await response.json();
+
     return data.items?.map((item: any) => ({ url: item.link })) || [];
   };
 
@@ -99,20 +88,14 @@ const PeeKaboo: React.FC = () => {
 
     return `Answer the following based on the provided information:
 
-1. Provide a detailed, paragraphed, comprehensive answer to the question. It must be accurate, high-quality, and expertly written in a positive, interesting, and engaging manner. The answer should be informative and in the same language as the user question. Aim for at least 300 words in your response.
+1. Provide a detailed, engaging answer with at least 300 words. 
+2. Include a section titled "Image Descriptions" with explanations for each image.
 
-2. After your main answer, provide a section titled "Image Descriptions" where you describe how each of the provided images relates to the topic. Use the format: "Image X: [Brief description and relevance to the topic]"
-
-Always use the related citations and cite them at the end of each sentence in the format [citation:x]. If a sentence comes from multiple citations, list all applicable citations, like [citation:2][citation:3].
-
-Here are the provided citations:
-
+Citations:
 ${snippetsText}
 
-Here are descriptions of relevant images:
-${imagesText}
-
-Use the provided information to create a comprehensive and engaging response.`;
+Image Descriptions:
+${imagesText}`;
   };
 
   const requestGroq = async (query: string, context: string): Promise<GroqResponse> => {
@@ -126,7 +109,7 @@ Use the provided information to create a comprehensive and engaging response.`;
         model: "mixtral-8x7b-32768",
         messages: [
           { role: "system", content: context },
-          { role: "user", content: query }
+          { role: "user", content: query },
         ],
         temperature: 0.7,
         max_tokens: 3000,
@@ -146,35 +129,20 @@ Use the provided information to create a comprehensive and engaging response.`;
     setMetadata('');
 
     try {
-      console.log('Fetching search results and images...');
-      const [snippets, images] = await Promise.all([
-        searchWithGoogle(query),
-        searchImagesWithGoogle(query)
-      ]);
-      console.log(`Found ${snippets.length} snippets and ${images.length} images`);
-
+      const [snippets, images] = await Promise.all([searchWithGoogle(query), searchImagesWithGoogle(query)]);
       setResults(images);
 
-      console.log('Preparing prompt context...');
       const promptContext = getPromptContext(snippets, images);
-
-      console.log('Requesting summary from Groq...');
       const data = await requestGroq(query, promptContext);
 
       const content = data.choices?.[0]?.message?.content || 'No summary available.';
-      console.log('Received summary from Groq');
-
       setSummary(content);
       setMetadata(`Query: ${query}\nModel: mixtral-8x7b-32768`);
 
       const summaryElement = document.getElementById('summary');
-      if (summaryElement) {
-        typeWriterEffect(content, summaryElement);
-      }
+      if (summaryElement) typeWriterEffect(content, summaryElement);
     } catch (error) {
-      console.error('Error:', error);
       setError(`An error occurred: ${(error as Error).message}`);
-      setSummary('');
     } finally {
       setIsLoading(false);
     }
@@ -228,3 +196,4 @@ Use the provided information to create a comprehensive and engaging response.`;
 };
 
 export default PeeKaboo;
+
